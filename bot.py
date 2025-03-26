@@ -22,6 +22,7 @@ dp = Dispatcher(storage=storage)
 # Класс состояний
 class Form(StatesGroup):
     name = State()
+    referrer = State()
 
 # Файл для данных
 DATA_FILE = "user_data.json"
@@ -85,20 +86,70 @@ async def process_name(message: types.Message, state: FSMContext):
         await message.answer("❗ Вы уже участвуете в розыгрыше!")
         await state.clear()
         return
-        
+    
+    # Сохранение имени во временное состояние
+    await state.update_data(full_name=full_name)
+    
+    await message.answer(
+        "👥 Если вас пригласил кто-то, укажите его имя аккаунта (например, @example).\n"
+        "Если нет - просто напишите 'нет' или пропустите (нажмите /skip)",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+    await state.set_state(Form.referrer)
+
+@dp.message(Form.referrer)
+async def process_referrer(message: types.Message, state: FSMContext):
+    data = load_data()
+    user_id = str(message.from_user.id)
+    referrer = message.text.strip()
+    
+    # Получаем данные из состояния
+    user_data = await state.get_data()
+    full_name = user_data["full_name"]
+    
+    # Проверка формата реферальной ссылки
+    if referrer.lower() != "нет" and not referrer.startswith("@"):
+        await message.answer("❗ Пожалуйста, укажите имя аккаунта в формате @example или напишите 'нет'")
+        return
+    
     # Сохранение данных
     data[user_id] = {
         "full_name": full_name,
-        "username": message.from_user.username
+        "username": message.from_user.username,
+        "referrer": referrer if referrer.lower() != "нет" else None
     }
     save_data(data)
     
+    referrer_text = f"\nПриглашен: {referrer}" if referrer.lower() != "нет" else ""
     await message.answer(
         f"✅ Спасибо, {full_name}!\n"
-        "Вы успешно зарегистрированы в розыгрыше! 🍀",
+        f"Вы успешно зарегистрированы в розыгрыше! 🍀{referrer_text}",
         parse_mode="Markdown"
     )
     await state.clear()
+
+@dp.message(Command("skip"))
+async def skip_referrer(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state == Form.referrer.state:
+        data = load_data()
+        user_id = str(message.from_user.id)
+        user_data = await state.get_data()
+        full_name = user_data["full_name"]
+        
+        data[user_id] = {
+            "full_name": full_name,
+            "username": message.from_user.username,
+            "referrer": None
+        }
+        save_data(data)
+        
+        await message.answer(
+            f"✅ Спасибо, {full_name}!\n"
+            "Вы успешно зарегистрированы в розыгрыше! 🍀",
+            parse_mode="Markdown"
+        )
+        await state.clear()
 
 @dp.message(Command("cancel"))
 async def cancel(message: types.Message, state: FSMContext):
