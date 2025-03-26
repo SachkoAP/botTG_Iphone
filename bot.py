@@ -68,7 +68,7 @@ async def participate(message: types.Message, state: FSMContext):
         "<blockquote>Это необходимо для сверки вас в базе зарегестрированных пользователей Тинькофф через нашу реферальную ссылку</blockquote>\n"
         "Пример: Иван Иванов",
         reply_markup=types.ReplyKeyboardRemove(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(Form.name)
 
