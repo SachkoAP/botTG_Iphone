@@ -26,11 +26,11 @@ class Form(StatesGroup):
 
 # Файл для данных
 DATA_FILE = "user_data.json"
-ADMIN_FILE = "admin_data.json"  # Файл для хранения состояния админа
+ADMIN_FILE = "admin_data.json"
 
-# ID админа (будет определен позже)
+# ID админа
 ADMIN_USERNAME = "@tiuberg"
-ADMIN_ID = None  # Будет обновляться при активации админского режима
+ADMIN_ID = None
 
 def load_data():
     try:
@@ -90,17 +90,25 @@ async def participate(message: types.Message, state: FSMContext):
 @dp.message(Command("adminPanelforMe"))
 async def activate_admin_panel(message: types.Message, state: FSMContext):
     global ADMIN_ID
-    if message.from_user.username != ADMIN_USERNAME[1:]:  # Убираем @ из сравнения
+    logger.info(f"Получена команда adminPanelforMe от @{message.from_user.username} (ID: {message.from_user.id})")
+    
+    if message.from_user.username.lower() != ADMIN_USERNAME[1:].lower():
         await message.answer("❌ У вас нет доступа к этой команде!")
+        logger.info(f"Доступ отклонен для @{message.from_user.username}")
         return
     
-    admin_data = load_admin_data()
-    admin_data["admin_id"] = str(message.from_user.id)
-    admin_data["is_active"] = True
-    save_admin_data(admin_data)
-    ADMIN_ID = str(message.from_user.id)
-    
-    await message.answer("✅ Админский режим активирован! Вы будете получать данные о новых пользователях.")
+    try:
+        admin_data = load_admin_data()
+        admin_data["admin_id"] = str(message.from_user.id)
+        admin_data["is_active"] = True
+        save_admin_data(admin_data)
+        ADMIN_ID = str(message.from_user.id)
+        
+        await message.answer("✅ Админский режим активирован! Вы будете получать данные о новых пользователях.")
+        logger.info(f"Админский режим активирован для @{message.from_user.username}")
+    except Exception as e:
+        await message.answer("❗ Произошла ошибка при активации админского режима.")
+        logger.error(f"Ошибка при активации админского режима: {str(e)}")
 
 @dp.message(Form.name)
 async def process_name(message: types.Message, state: FSMContext):
@@ -156,17 +164,19 @@ async def process_referrer(message: types.Message, state: FSMContext):
         parse_mode="Markdown"
     )
     
-    # Отправка данных админу, если админский режим активен
     admin_data = load_admin_data()
     if admin_data["is_active"] and admin_data["admin_id"]:
-        await bot.send_message(
-            admin_data["admin_id"],
-            f"Новый пользователь:\n"
-            f"Имя: {full_name}\n"
-            f"Username: @{message.from_user.username}\n"
-            f"Приглашен: {referrer if referrer and referrer != '/skip' else 'Нет'}",
-            parse_mode="Markdown"
-        )
+        try:
+            await bot.send_message(
+                admin_data["admin_id"],
+                f"Новый пользователь:\n"
+                f"Имя: {full_name}\n"
+                f"Username: @{message.from_user.username}\n"
+                f"Приглашен: {referrer if referrer and referrer != '/skip' else 'Нет'}",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при отправке сообщения админу: {str(e)}")
     
     await state.clear()
 
@@ -192,17 +202,19 @@ async def skip_referrer(message: types.Message, state: FSMContext):
             parse_mode="Markdown"
         )
         
-        # Отправка данных админу, если админский режим активен
         admin_data = load_admin_data()
         if admin_data["is_active"] and admin_data["admin_id"]:
-            await bot.send_message(
-                admin_data["admin_id"],
-                f"Новый пользователь:\n"
-                f"Имя: {full_name}\n"
-                f"Username: @{message.from_user.username}\n"
-                f"Приглашен: Нет",
-                parse_mode="Markdown"
-            )
+            try:
+                await bot.send_message(
+                    admin_data["admin_id"],
+                    f"Новый пользователь:\n"
+                    f"Имя: {full_name}\n"
+                    f"Username: @{message.from_user.username}\n"
+                    f"Приглашен: Нет",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Ошибка при отправке сообщения админу: {str(e)}")
         
         await state.clear()
     else:
