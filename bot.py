@@ -26,6 +26,11 @@ class Form(StatesGroup):
 
 # Файл для данных
 DATA_FILE = "user_data.json"
+ADMIN_FILE = "admin_data.json"  # Файл для хранения состояния админа
+
+# ID админа (будет определен позже)
+ADMIN_USERNAME = "@tiuberg"
+ADMIN_ID = None  # Будет обновляться при активации админского режима
 
 def load_data():
     try:
@@ -38,12 +43,22 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
+def load_admin_data():
+    try:
+        with open(ADMIN_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"admin_id": None, "is_active": False}
+
+def save_admin_data(data):
+    with open(ADMIN_FILE, "w") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
 @dp.message(Command("start"))
 async def start(message: types.Message, state: FSMContext):
     data = load_data()
     user_id = str(message.from_user.id)
     
-    # Проверка на повторную регистрацию
     if any(user_id in entry for entry in data.values()):
         await message.answer("❗ Вы уже участвуете в розыгрыше!")
         return
@@ -72,24 +87,36 @@ async def participate(message: types.Message, state: FSMContext):
     )
     await state.set_state(Form.name)
 
+@dp.message(Command("adminPanelforMe"))
+async def activate_admin_panel(message: types.Message, state: FSMContext):
+    global ADMIN_ID
+    if message.from_user.username != ADMIN_USERNAME[1:]:  # Убираем @ из сравнения
+        await message.answer("❌ У вас нет доступа к этой команде!")
+        return
+    
+    admin_data = load_admin_data()
+    admin_data["admin_id"] = str(message.from_user.id)
+    admin_data["is_active"] = True
+    save_admin_data(admin_data)
+    ADMIN_ID = str(message.from_user.id)
+    
+    await message.answer("✅ Админский режим активирован! Вы будете получать данные о новых пользователях.")
+
 @dp.message(Form.name)
 async def process_name(message: types.Message, state: FSMContext):
     data = load_data()
     user_id = str(message.from_user.id)
     full_name = message.text.strip()
     
-    # Проверка формата ввода
     if len(full_name.split()) < 2:
         await message.answer("❗ Пожалуйста, введите и Имя, и Фамилию!")
         return
         
-    # Проверка на существующую запись
     if any(user_id in entry for entry in data.values()):
         await message.answer("❗ Вы уже участвуете в розыгрыше!")
         await state.clear()
         return
     
-    # Сохранение имени во временное состояние
     await state.update_data(full_name=full_name)
     
     await message.answer(
@@ -105,20 +132,16 @@ async def process_referrer(message: types.Message, state: FSMContext):
     user_id = str(message.from_user.id)
     referrer = message.text.strip()
     
-    # Получаем данные из состояния
     user_data = await state.get_data()
     full_name = user_data["full_name"]
     
-    # Проверка формата реферальной ссылки
     if referrer.lower() != "нет" and not referrer.startswith("@") and referrer != "/skip":
         await message.answer("❗ Пожалуйста, укажите имя аккаунта в формате @example или напишите 'нет'")
         return
     
-    # Если пользователь написал "нет"
     if referrer.lower() == "нет":
         referrer = None
     
-    # Сохранение данных
     data[user_id] = {
         "full_name": full_name,
         "username": message.from_user.username,
@@ -132,6 +155,19 @@ async def process_referrer(message: types.Message, state: FSMContext):
         f"Вы успешно зарегистрированы в розыгрыше! 🍀{referrer_text}",
         parse_mode="Markdown"
     )
+    
+    # Отправка данных админу, если админский режим активен
+    admin_data = load_admin_data()
+    if admin_data["is_active"] and admin_data["admin_id"]:
+        await bot.send_message(
+            admin_data["admin_id"],
+            f"Новый пользователь:\n"
+            f"Имя: {full_name}\n"
+            f"Username: @{message.from_user.username}\n"
+            f"Приглашен: {referrer if referrer and referrer != '/skip' else 'Нет'}",
+            parse_mode="Markdown"
+        )
+    
     await state.clear()
 
 @dp.message(Command("skip"))
@@ -155,6 +191,19 @@ async def skip_referrer(message: types.Message, state: FSMContext):
             "Вы успешно зарегистрированы в розыгрыше! 🍀",
             parse_mode="Markdown"
         )
+        
+        # Отправка данных админу, если админский режим активен
+        admin_data = load_admin_data()
+        if admin_data["is_active"] and admin_data["admin_id"]:
+            await bot.send_message(
+                admin_data["admin_id"],
+                f"Новый пользователь:\n"
+                f"Имя: {full_name}\n"
+                f"Username: @{message.from_user.username}\n"
+                f"Приглашен: Нет",
+                parse_mode="Markdown"
+            )
+        
         await state.clear()
     else:
         await message.answer("❗ Эта команда работает только на этапе указания пригласившего")
