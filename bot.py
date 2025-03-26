@@ -110,19 +110,23 @@ async def process_referrer(message: types.Message, state: FSMContext):
     full_name = user_data["full_name"]
     
     # Проверка формата реферальной ссылки
-    if referrer.lower() != "нет" and not referrer.startswith("@"):
+    if referrer.lower() != "нет" and not referrer.startswith("@") and referrer != "/skip":
         await message.answer("❗ Пожалуйста, укажите имя аккаунта в формате @example или напишите 'нет'")
         return
+    
+    # Если пользователь написал "нет"
+    if referrer.lower() == "нет":
+        referrer = None
     
     # Сохранение данных
     data[user_id] = {
         "full_name": full_name,
         "username": message.from_user.username,
-        "referrer": referrer if referrer.lower() != "нет" else None
+        "referrer": referrer if referrer != "/skip" else None
     }
     save_data(data)
     
-    referrer_text = f"\nПриглашен: {referrer}" if referrer.lower() != "нет" else ""
+    referrer_text = f"\nПриглашен: {referrer}" if referrer and referrer != "/skip" else ""
     await message.answer(
         f"✅ Спасибо, {full_name}!\n"
         f"Вы успешно зарегистрированы в розыгрыше! 🍀{referrer_text}",
@@ -152,6 +156,8 @@ async def skip_referrer(message: types.Message, state: FSMContext):
             parse_mode="Markdown"
         )
         await state.clear()
+    else:
+        await message.answer("❗ Эта команда работает только на этапе указания пригласившего")
 
 @dp.message(Command("cancel"))
 async def cancel(message: types.Message, state: FSMContext):
